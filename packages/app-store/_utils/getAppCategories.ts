@@ -1,5 +1,6 @@
 import { WEBAPP_URL } from "@calcom/lib/constants";
-import { Icon } from "@calcom/ui";
+import type { AppCategories } from "@calcom/prisma/enums";
+import type { IconName } from "@calcom/ui";
 
 function getHref(baseURL: string, category: string, useQueryParam: boolean) {
   const baseUrlParsed = new URL(baseURL, WEBAPP_URL);
@@ -7,42 +8,55 @@ function getHref(baseURL: string, category: string, useQueryParam: boolean) {
   return useQueryParam ? `${baseUrlParsed.toString()}` : `${baseURL}/${category}`;
 }
 
-const getAppCategories = (baseURL: string, useQueryParam = true) => {
+type AppCategoryEntry = {
+  name: AppCategories;
+  href: string;
+  icon: IconName;
+};
+
+const getAppCategories = (baseURL: string, useQueryParam: boolean): AppCategoryEntry[] => {
+  // Manually sorted alphabetically, but leaving "Other" at the end
+  // TODO: Refactor and type with Record<AppCategories, AppCategoryEntry> to enforce consistency
   return [
     {
-      name: "calendar",
-      href: getHref(baseURL, "calendar", useQueryParam),
-      icon: Icon.FiCalendar,
-    },
-    {
-      name: "conferencing",
-      href: getHref(baseURL, "conferencing", useQueryParam),
-      icon: Icon.FiVideo,
-    },
-    {
-      name: "payment",
-      href: getHref(baseURL, "payment", useQueryParam),
-      icon: Icon.FiCreditCard,
+      name: "analytics",
+      href: getHref(baseURL, "analytics", useQueryParam),
+      icon: "chart-bar",
     },
     {
       name: "automation",
       href: getHref(baseURL, "automation", useQueryParam),
-      icon: Icon.FiShare2,
+      icon: "share-2",
     },
     {
-      name: "analytics",
-      href: getHref(baseURL, "analytics", useQueryParam),
-      icon: Icon.FiBarChart,
+      name: "calendar",
+      href: getHref(baseURL, "calendar", useQueryParam),
+      icon: "calendar",
     },
     {
-      name: "web3",
-      href: getHref(baseURL, "web3", useQueryParam),
-      icon: Icon.FiBarChart,
+      name: "conferencing",
+      href: getHref(baseURL, "conferencing", useQueryParam),
+      icon: "video",
+    },
+    {
+      name: "crm",
+      href: getHref(baseURL, "crm", useQueryParam),
+      icon: "contact",
+    },
+    {
+      name: "messaging",
+      href: getHref(baseURL, "messaging", useQueryParam),
+      icon: "mail",
+    },
+    {
+      name: "payment",
+      href: getHref(baseURL, "payment", useQueryParam),
+      icon: "credit-card",
     },
     {
       name: "other",
       href: getHref(baseURL, "other", useQueryParam),
-      icon: Icon.FiGrid,
+      icon: "grid-3x3",
     },
   ];
 };

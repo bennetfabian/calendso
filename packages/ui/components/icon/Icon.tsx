@@ -1,18 +1,29 @@
-// if feather icon is missing, use "@heroicons/react/outline";
-import { CollectionIcon } from "@heroicons/react/outline";
-import { ShieldCheckIcon } from "@heroicons/react/outline";
-import { BadgeCheckIcon } from "@heroicons/react/outline";
-import { ClipboardCopyIcon } from "@heroicons/react/outline";
-import { StarIcon as StarIconSolid } from "@heroicons/react/solid";
-// find all feather icons at https://feathericons.com/
-// github https://github.com/feathericons/feather
-import * as ReactIcons from "react-icons/fi";
+import { type SVGProps } from "react";
 
-export const Icon = {
-  ...ReactIcons,
-  CollectionIcon,
-  ShieldCheckIcon,
-  BadgeCheckIcon,
-  ClipboardCopyIcon,
-  StarIconSolid,
-};
+import cn from "@calcom/lib/classNames";
+
+import type { IconName } from "./icon-names";
+
+function Icon({
+  name,
+  size = 16,
+  className,
+  ...props
+}: SVGProps<SVGSVGElement> & {
+  name: IconName;
+  size?: number | string;
+}) {
+  return (
+    <svg
+      height={size}
+      width={size}
+      // Fill are inherited so we transparent by default. Can be overiden tailwind.
+      className={cn("fill-transparent", className)}
+      {...props}
+      aria-hidden>
+      <use href={`#${name}`} />
+    </svg>
+  );
+}
+export { IconName };
+export default Icon;

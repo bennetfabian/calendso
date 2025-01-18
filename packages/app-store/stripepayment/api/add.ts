@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import stringify from "qs-stringify";
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { z } from "zod";
 
 import { WEBAPP_URL } from "@calcom/lib/constants";
@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-    const redirect_uri = encodeURI(WEBAPP_URL + "/api/integrations/stripepayment/callback");
+    const redirect_uri = encodeURI(`${WEBAPP_URL}/api/integrations/stripepayment/callback`);
     const stripeConnectParams: Stripe.OAuthAuthorizeUrlParams = {
       client_id,
       scope: "read_write",

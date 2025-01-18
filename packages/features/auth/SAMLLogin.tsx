@@ -1,13 +1,15 @@
 import { signIn } from "next-auth/react";
-import { Dispatch, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useFormContext } from "react-hook-form";
 import z from "zod";
 
 import { HOSTED_CAL_FEATURES } from "@calcom/lib/constants";
+import { emailRegex } from "@calcom/lib/emailSchema";
+import { LastUsed, useLastUsed } from "@calcom/lib/hooks/useLastUsed";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { collectPageParameters, telemetryEventTypes, useTelemetry } from "@calcom/lib/telemetry";
 import { trpc } from "@calcom/trpc/react";
-import { Button, Icon } from "@calcom/ui";
+import type { ButtonProps } from "@calcom/ui";
+import { Button } from "@calcom/ui";
 
 interface Props {
   samlTenantID: string;
@@ -16,16 +18,22 @@ interface Props {
 }
 
 const schema = z.object({
-  email: z.string().email({ message: "Please enter a valid email" }),
+  email: z.string().regex(emailRegex, { message: "Please enter a valid email" }),
 });
 
-export function SAMLLogin({ samlTenantID, samlProductID, setErrorMessage }: Props) {
+export function SAMLLogin({
+  samlTenantID,
+  samlProductID,
+  setErrorMessage,
+  ...buttonProps
+}: Props & ButtonProps) {
   const { t } = useLocale();
   const methods = useFormContext();
-  const telemetry = useTelemetry();
+  const [lastUsed, setLastUsed] = useLastUsed();
 
   const mutation = trpc.viewer.public.samlTenantProduct.useMutation({
     onSuccess: async (data) => {
+      setLastUsed("saml");
       await signIn("saml", {}, { tenant: data.tenant, product: data.product });
     },
     onError: (err) => {
@@ -35,15 +43,12 @@ export function SAMLLogin({ samlTenantID, samlProductID, setErrorMessage }: Prop
 
   return (
     <Button
-      StartIcon={Icon.FiLock}
+      StartIcon="lock"
       color="secondary"
-      data-testid="saml"
+      data-testid="samlAndOidc"
       className="flex w-full justify-center"
       onClick={async (event) => {
         event.preventDefault();
-
-        // track Google logins. Without personal data/payload
-        telemetry.event(telemetryEventTypes.googleLogin, collectPageParameters());
 
         if (!HOSTED_CAL_FEATURES) {
           await signIn("saml", {}, { tenant: samlTenantID, product: samlProductID });
@@ -66,8 +71,10 @@ export function SAMLLogin({ samlTenantID, samlProductID, setErrorMessage }: Prop
         mutation.mutate({
           email,
         });
-      }}>
-      {t("signin_with_saml")}
+      }}
+      {...buttonProps}>
+      <span>{t("signin_with_saml_oidc")}</span>
+      {lastUsed === "saml" && <LastUsed />}
     </Button>
   );
 }

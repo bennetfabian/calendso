@@ -1,99 +1,116 @@
-import { Prisma, SchedulingType } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { useMemo } from "react";
-import { FormattedNumber, IntlProvider } from "react-intl";
-import { z } from "zod";
+import type { z } from "zod";
 
+import { Price } from "@calcom/features/bookings/components/event-meta/Price";
+import { PriceIcon } from "@calcom/features/bookings/components/event-meta/PriceIcon";
 import { classNames, parseRecurringEvent } from "@calcom/lib";
-import getStripeAppData from "@calcom/lib/getStripeAppData";
+import { getPaymentAppData } from "@calcom/lib/getPaymentAppData";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { baseEventTypeSelect } from "@calcom/prisma";
-import { EventTypeModel } from "@calcom/prisma/zod";
-import { Badge, Icon } from "@calcom/ui";
+import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
+import type { baseEventTypeSelect } from "@calcom/prisma";
+import { SchedulingType } from "@calcom/prisma/enums";
+import type { EventTypeModel } from "@calcom/prisma/zod";
+import { eventTypeMetaDataSchemaWithTypedApps } from "@calcom/prisma/zod-utils";
+import { Badge } from "@calcom/ui";
 
 export type EventTypeDescriptionProps = {
   eventType: Pick<
     z.infer<typeof EventTypeModel>,
-    Exclude<keyof typeof baseEventTypeSelect, "recurringEvent"> | "metadata"
+    Exclude<keyof typeof baseEventTypeSelect, "recurringEvent"> | "metadata" | "seatsPerTimeSlot"
   > & {
+    descriptionAsSafeHTML?: string | null;
     recurringEvent: Prisma.JsonValue;
   };
   className?: string;
+  shortenDescription?: boolean;
+  isPublic?: boolean;
 };
 
-export const EventTypeDescription = ({ eventType, className }: EventTypeDescriptionProps) => {
-  const { t } = useLocale();
+export const EventTypeDescription = ({
+  eventType,
+  className,
+  shortenDescription,
+  isPublic,
+}: EventTypeDescriptionProps) => {
+  const { t, i18n } = useLocale();
 
   const recurringEvent = useMemo(
     () => parseRecurringEvent(eventType.recurringEvent),
     [eventType.recurringEvent]
   );
 
-  const stripeAppData = getStripeAppData(eventType);
+  const paymentAppData = getPaymentAppData({
+    ...eventType,
+    metadata: eventTypeMetaDataSchemaWithTypedApps.parse(eventType.metadata),
+  });
 
   return (
     <>
-      <div className={classNames("dark:text-darkgray-800 text-neutral-500", className)}>
+      <div className={classNames("text-subtle", className)}>
         {eventType.description && (
-          <p className="dark:text-darkgray-800 max-w-[280px] break-words py-1 text-sm text-gray-500 sm:max-w-[500px]">
-            {eventType.description.substring(0, 300)}
-            {eventType.description.length > 300 && "..."}
-          </p>
+          <div
+            className={classNames(
+              "text-subtle line-clamp-3 break-words py-1 text-sm sm:max-w-[650px] [&_a]:text-blue-500 [&_a]:underline [&_a]:hover:text-blue-600",
+              shortenDescription ? "line-clamp-4 [&>*:not(:first-child)]:hidden" : ""
+            )}
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{
+              __html: markdownToSafeHTML(eventType.descriptionAsSafeHTML || ""),
+            }}
+          />
         )}
-        <ul className="mt-2 flex flex-wrap space-x-2 rtl:space-x-reverse sm:flex-nowrap">
+        <ul className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
           {eventType.metadata?.multipleDuration ? (
             eventType.metadata.multipleDuration.map((dur, idx) => (
               <li key={idx}>
-                <Badge variant="gray" size="lg" StartIcon={Icon.FiClock}>
+                <Badge variant="gray" startIcon="clock">
                   {dur}m
                 </Badge>
               </li>
             ))
           ) : (
             <li>
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiClock}>
+              <Badge variant="gray" startIcon="clock">
                 {eventType.length}m
               </Badge>
             </li>
           )}
-          {eventType.schedulingType ? (
+          {eventType.schedulingType && eventType.schedulingType !== SchedulingType.MANAGED && (
             <li>
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiUser}>
+              <Badge variant="gray" startIcon="users">
                 {eventType.schedulingType === SchedulingType.ROUND_ROBIN && t("round_robin")}
                 {eventType.schedulingType === SchedulingType.COLLECTIVE && t("collective")}
               </Badge>
             </li>
-          ) : (
-            <li>
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiUser}>
-                {t("1_on_1")}
-              </Badge>
-            </li>
           )}
           {recurringEvent?.count && recurringEvent.count > 0 && (
-            <li className="hidden xl:block">
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiRefreshCw}>
+            <li className="hidden xl:block" data-testid="repeat-eventtype">
+              <Badge variant="gray" startIcon="refresh-cw">
                 {t("repeats_up_to", {
                   count: recurringEvent.count,
                 })}
               </Badge>
             </li>
           )}
-          {stripeAppData.price > 0 && (
+          {paymentAppData.enabled && (
             <li>
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiCreditCard}>
-                <IntlProvider locale="en">
-                  <FormattedNumber
-                    value={stripeAppData.price / 100.0}
-                    style="currency"
-                    currency={stripeAppData.currency.toUpperCase()}
-                  />
-                </IntlProvider>
+              <Badge
+                variant="gray"
+                customStartIcon={
+                  <PriceIcon currency={paymentAppData.currency} className="h-3 w-3 stroke-[3px]" />
+                }>
+                <Price
+                  currency={paymentAppData.currency}
+                  price={paymentAppData.price}
+                  displayAlternateSymbol={false}
+                />
               </Badge>
             </li>
           )}
           {eventType.requiresConfirmation && (
-            <li className="hidden xl:block">
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiClipboard}>
+            <li className="hidden xl:block" data-testid="requires-confirmation-badge">
+              <Badge variant="gray" startIcon="clipboard">
                 {eventType.metadata?.requiresConfirmationThreshold
                   ? t("may_require_confirmation")
                   : t("requires_confirmation")}
@@ -103,13 +120,20 @@ export const EventTypeDescription = ({ eventType, className }: EventTypeDescript
           {/* TODO: Maybe add a tool tip to this? */}
           {eventType.requiresConfirmation || (recurringEvent?.count && recurringEvent.count) ? (
             <li className="block xl:hidden">
-              <Badge variant="gray" size="lg" StartIcon={Icon.FiPlus}>
+              <Badge variant="gray" startIcon="plus">
                 <p>{[eventType.requiresConfirmation, recurringEvent?.count].filter(Boolean).length}</p>
               </Badge>
             </li>
           ) : (
             <></>
           )}
+          {eventType?.seatsPerTimeSlot ? (
+            <li>
+              <Badge variant="gray" startIcon="user">
+                <p>{t("event_type_seats", { numberOfSeats: eventType.seatsPerTimeSlot })} </p>
+              </Badge>
+            </li>
+          ) : null}
         </ul>
       </div>
     </>

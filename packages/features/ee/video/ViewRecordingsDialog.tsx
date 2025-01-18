@@ -1,18 +1,17 @@
-import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import dayjs from "@calcom/dayjs";
-import LicenseRequired from "@calcom/features/ee/common/components/v2/LicenseRequired";
-import { WEBSITE_URL } from "@calcom/lib/constants";
+import LicenseRequired from "@calcom/features/ee/common/components/LicenseRequired";
+import { useHasTeamPlan } from "@calcom/lib/hooks/useHasPaidPlan";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { RecordingItemSchema } from "@calcom/prisma/zod-utils";
-import { RouterOutputs, trpc } from "@calcom/trpc/react";
+import type { RecordingItemSchema } from "@calcom/prisma/zod-utils";
+import type { RouterOutputs } from "@calcom/trpc/react";
+import { trpc } from "@calcom/trpc/react";
 import type { PartialReference } from "@calcom/types/EventManager";
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader } from "@calcom/ui";
-import { Button, showToast, Icon } from "@calcom/ui";
+import { Button, Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader } from "@calcom/ui";
 
 import RecordingListSkeleton from "./components/RecordingListSkeleton";
-import UpgradeRecordingBanner from "./components/UpgradeRecordingBanner";
 
 type BookingItem = RouterOutputs["viewer"]["bookings"]["get"]["bookings"][number];
 
@@ -34,61 +33,136 @@ interface GetTimeSpanProps {
   startTime: string | undefined;
   endTime: string | undefined;
   locale: string;
-  isTimeFormatAMPM: boolean;
+  hour12: boolean;
 }
 
-const getTimeSpan = ({ startTime, endTime, locale, isTimeFormatAMPM }: GetTimeSpanProps) => {
+const getTimeSpan = ({ startTime, endTime, locale, hour12 }: GetTimeSpanProps) => {
   if (!startTime || !endTime) return "";
 
   const formattedStartTime = new Intl.DateTimeFormat(locale, {
     hour: "numeric",
     minute: "numeric",
-    hour12: isTimeFormatAMPM,
+    hour12,
   }).format(new Date(startTime));
 
   const formattedEndTime = new Intl.DateTimeFormat(locale, {
     hour: "numeric",
     minute: "numeric",
-    hour12: isTimeFormatAMPM,
+    hour12,
   }).format(new Date(endTime));
 
   return `${formattedStartTime} - ${formattedEndTime}`;
 };
 
+const useRecordingDownload = () => {
+  const [recordingId, setRecordingId] = useState("");
+  const { isFetching, data } = trpc.viewer.getDownloadLinkOfCalVideoRecordings.useQuery(
+    {
+      recordingId,
+    },
+    {
+      enabled: !!recordingId,
+      gcTime: 0,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+    }
+  );
+
+  useEffect(
+    function refactorMeWithoutEffect() {
+      if (data && data.download_link) {
+        window.location.href = data.download_link;
+      }
+    },
+    [data]
+  );
+  return {
+    setRecordingId: (newRecordingId: string) => {
+      // may be a way to do this by default, but this is easy enough.
+      if (recordingId === newRecordingId && data) {
+        window.location.href = data.download_link;
+      }
+      if (!isFetching) {
+        setRecordingId(newRecordingId);
+      }
+      // assume it is still fetching, do nothing.
+    },
+    isFetching,
+    recordingId,
+  };
+};
+
+const ViewRecordingsList = ({ roomName, hasTeamPlan }: { roomName: string; hasTeamPlan: boolean }) => {
+  const { t } = useLocale();
+  const { setRecordingId, isFetching, recordingId } = useRecordingDownload();
+  const router = useRouter();
+
+  const { data: recordings } = trpc.viewer.getCalVideoRecordings.useQuery(
+    { roomName },
+    {
+      suspense: true,
+    }
+  );
+
+  const handleDownloadClick = async (recordingId: string) => {
+    // this would enable the getDownloadLinkOfCalVideoRecordings
+    setRecordingId(recordingId);
+  };
+
+  return (
+    <>
+      {recordings && "data" in recordings && recordings?.data?.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {recordings.data.map((recording: RecordingItemSchema, index: number) => {
+            return (
+              <div
+                className="border-subtle flex w-full items-center justify-between rounded-md border px-4 py-2"
+                key={recording.id}>
+                <div className="flex flex-col">
+                  <h1 className="text-sm font-semibold">
+                    {t("recording")} {index + 1}
+                  </h1>
+                  <p className="text-subtle text-sm font-normal">{convertSecondsToMs(recording.duration)}</p>
+                </div>
+                {hasTeamPlan ? (
+                  <Button
+                    StartIcon="download"
+                    className="ml-4 lg:ml-0"
+                    loading={isFetching && recordingId === recording.id}
+                    onClick={() => handleDownloadClick(recording.id)}>
+                    {t("download")}
+                  </Button>
+                ) : (
+                  <Button
+                    tooltip={t("upgrade_to_access_recordings_description")}
+                    className="ml-4 lg:ml-0"
+                    onClick={() => router.push("/teams")}>
+                    {t("upgrade")}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        (!recordings || (recordings && "total_count" in recordings && recordings?.total_count === 0)) && (
+          <p className="font-semibold">{t("no_recordings_found")}</p>
+        )
+      )}
+    </>
+  );
+};
+
 export const ViewRecordingsDialog = (props: IViewRecordingsDialog) => {
   const { t, i18n } = useLocale();
   const { isOpenDialog, setIsOpenDialog, booking, timeFormat } = props;
-  const [downloadingRecordingId, setRecordingId] = useState<string | null>(null);
-  const session = useSession();
-  const belongsToActiveTeam = session?.data?.user?.belongsToActiveTeam ?? false;
-  const [showUpgradeBanner, setShowUpgradeBanner] = useState<boolean>(false);
+
+  const { hasTeamPlan, isPending: isTeamPlanStatusLoading } = useHasTeamPlan();
+
   const roomName =
     booking?.references?.find((reference: PartialReference) => reference.type === "daily_video")?.meetingId ??
     undefined;
-
-  const { data: recordings, isLoading } = trpc.viewer.getCalVideoRecordings.useQuery(
-    { roomName: roomName ?? "" },
-    { enabled: !!roomName && isOpenDialog }
-  );
-  const handleDownloadClick = async (recordingId: string) => {
-    try {
-      setRecordingId(recordingId);
-      const res = await fetch(`${WEBSITE_URL}/api/download-cal-video-recording?recordingId=${recordingId}`, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      const respBody = await res.json();
-
-      if (respBody?.download_link) {
-        window.location.href = respBody.download_link;
-      }
-    } catch (err) {
-      console.error(err);
-      showToast(t("something_went_wrong"), "error");
-    }
-    setRecordingId(null);
-  };
 
   const subtitle = `${booking?.title} - ${dayjs(booking?.startTime).format("ddd")} ${dayjs(
     booking?.startTime
@@ -96,65 +170,28 @@ export const ViewRecordingsDialog = (props: IViewRecordingsDialog) => {
     startTime: booking?.startTime,
     endTime: booking?.endTime,
     locale: i18n.language,
-    isTimeFormatAMPM: timeFormat === 12,
+    hour12: timeFormat === 12,
   })} `;
 
   return (
     <Dialog open={isOpenDialog} onOpenChange={setIsOpenDialog}>
-      <DialogContent>
+      <DialogContent enableOverflow>
         <DialogHeader title={t("recordings_title")} subtitle={subtitle} />
-        <LicenseRequired>
-          {showUpgradeBanner && <UpgradeRecordingBanner />}
-          {!showUpgradeBanner && (
-            <>
-              {isLoading && <RecordingListSkeleton />}
-              {recordings && "data" in recordings && recordings?.data?.length > 0 && (
-                <div className="flex flex-col gap-3">
-                  {recordings.data.map((recording: RecordingItemSchema, index: number) => {
-                    return (
-                      <div
-                        className="flex w-full items-center justify-between rounded-md border py-2 px-4"
-                        key={recording.id}>
-                        <div className="flex flex-col">
-                          <h1 className="text-sm font-semibold">
-                            {t("recording")} {index + 1}
-                          </h1>
-                          <p className="text-sm font-normal text-gray-500">
-                            {convertSecondsToMs(recording.duration)}
-                          </p>
-                        </div>
-                        {belongsToActiveTeam ? (
-                          <Button
-                            StartIcon={Icon.FiDownload}
-                            className="ml-4 lg:ml-0"
-                            loading={downloadingRecordingId === recording.id}
-                            onClick={() => handleDownloadClick(recording.id)}>
-                            {t("download")}
-                          </Button>
-                        ) : (
-                          <Button
-                            color="secondary"
-                            tooltip={t("recordings_are_part_of_the_teams_plan")}
-                            className="ml-4 lg:ml-0"
-                            onClick={() => setShowUpgradeBanner(true)}>
-                            {t("upgrade")}
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {!isLoading &&
-                (!recordings ||
-                  (recordings && "total_count" in recordings && recordings?.total_count === 0)) && (
-                  <h1 className="font-semibold">No Recordings Found</h1>
-                )}
-            </>
-          )}
-        </LicenseRequired>
+        {roomName ? (
+          <LicenseRequired>
+            {isTeamPlanStatusLoading ? (
+              <RecordingListSkeleton />
+            ) : (
+              <Suspense fallback={<RecordingListSkeleton />}>
+                <ViewRecordingsList hasTeamPlan={!!hasTeamPlan} roomName={roomName} />
+              </Suspense>
+            )}
+          </LicenseRequired>
+        ) : (
+          <p className="font-semibold">{t("no_recordings_found")}</p>
+        )}
         <DialogFooter>
-          <DialogClose onClick={() => setShowUpgradeBanner(false)} className="border" />
+          <DialogClose className="border" />
         </DialogFooter>
       </DialogContent>
     </Dialog>

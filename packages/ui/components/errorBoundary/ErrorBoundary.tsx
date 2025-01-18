@@ -1,4 +1,5 @@
-import React, { ErrorInfo } from "react";
+import type { ErrorInfo } from "react";
+import React from "react";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; message?: string },
@@ -16,6 +17,15 @@ class ErrorBoundary extends React.Component<
   }
 
   render() {
+    // do not intercept next-not-found error, allow displaying not-found.tsx page when notFound() is thrown on server side
+    if (
+      this.state.error !== null &&
+      "digest" in this.state.error &&
+      this.state.error.digest === "NEXT_NOT_FOUND"
+    ) {
+      return this.props.children;
+    }
+
     if (this.state.errorInfo) {
       // Error path
       return (

@@ -1,6 +1,7 @@
-import { components, GroupBase, Props, ValueContainerProps } from "react-select";
+import type { GroupBase, Props, ValueContainerProps } from "react-select";
+import { components } from "react-select";
 
-import { Icon, Select } from "../../..";
+import { Icon, Select } from "@calcom/ui";
 
 const LimitedChipsContainer = <Option, IsMulti extends boolean, Group extends GroupBase<Option>>({
   children,
@@ -20,9 +21,10 @@ const LimitedChipsContainer = <Option, IsMulti extends boolean, Group extends Gr
     <components.ValueContainer {...props}>
       {displayChips}
       {overflowCounter > 0 && (
-        <span className="flex items-center justify-center rounded-md bg-gray-100 py-[5px] px-2 text-[14px] font-medium leading-4 text-gray-700">
+        <span className="bg-subtle text-default flex items-center justify-center rounded-md px-2 py-[5px] text-[14px] font-medium leading-4">
           <>
-            <Icon.FiPlus className="mr-1 inline h-3 w-3 stroke-[3px]" /> <span>{overflowCounter} more</span>
+            <Icon name="plus" className="mr-1 inline h-3 w-3 stroke-[3px]" />{" "}
+            <span>{overflowCounter} more</span>
           </>
         </span>
       )}
